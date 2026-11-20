@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Deniz'e Özür</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,800&family=Inter:wght@400;600&display=swap">
+<style>
+/* Layout: tek ekranlık, ortalanmış soru kartı; Evet/Hayır yan yana, Hayır kaçar; Evet sonrası tam ekran havai fişek */
+:root {
+  --bg: #12142b;
+  --fg: #f6f2ff;
+  --muted: #a9a8c8;
+  --accent: #ff7a59;
+  --accent-ink: #2a0f08;
+  --ghost: #2a2e55;
+  --font-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
+  --font-body: "Inter", -apple-system, system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 16px;
+  padding-block: 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+#fx { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
+main {
+  position: relative; z-index: 1;
+  min-height: 100%;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  gap: 2rem; text-align: center;
+  padding-block: 2rem;
+}
+.eyebrow { font-size: .8rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin: 0; }
+h1 {
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(2.4rem, 11vw, 4.5rem); line-height: 1.02; margin: 0;
+  text-wrap: balance; max-width: 14ch;
+}
+.q { font-family: var(--font-display); font-weight: 500; font-size: clamp(1.4rem, 6vw, 2rem); margin: 0; color: var(--fg); }
+.buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; width: min(100%, 22rem); align-items: center; }
+.slot { position: relative; display: flex; }
+button {
+  font: 600 1.1rem var(--font-body);
+  min-height: 3.4rem; width: 100%;
+  border: 0; border-radius: 999px; cursor: pointer;
+  padding: 0 1.4rem;
+}
+button:focus-visible { outline: 3px solid var(--fg); outline-offset: 3px; }
+#yes { background: var(--accent); color: var(--accent-ink); transition: transform .25s ease; transform-origin: center; }
+#no {
+  background: var(--ghost); color: var(--fg);
+  transition: left .28s cubic-bezier(.3,1.4,.5,1), top .28s cubic-bezier(.3,1.4,.5,1);
+  z-index: 5;
+}
+#no.free { width: auto; min-width: 7rem; position: fixed; }
+.hint { min-height: 1.4em; margin: 0; color: var(--muted); font-size: .95rem; }
+#thanks { display: none; flex-direction: column; gap: .5rem; align-items: center; animation: rise .8s ease both; }
+#thanks .big { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.6rem, 13vw, 5rem); line-height: 1; margin: 0; }
+#thanks .name { font-family: var(--font-display); font-weight: 800; font-size: clamp(2.6rem, 13vw, 5rem); line-height: 1; margin: 0; color: var(--accent); }
+body.done #ask { display: none; }
+body.done #thanks { display: flex; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px) scale(.96); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { #thanks { animation: none; } #no, #yes { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="fx" aria-hidden="true"></canvas>
+<main>
+  <section id="ask" style="display:flex;flex-direction:column;align-items:center;gap:2rem;">
+    <p class="eyebrow">Deniz'e</p>
+    <h1>Özür dilerim Deniz.</h1>
+    <p class="q">Beni affeder misin?</p>
+    <div class="buttons">
+      <div class="slot" id="yesSlot"><button id="yes" type="button">Evet</button></div>
+      <div class="slot" id="noSlot"><button id="no" type="button">Hayır</button></div>
+    </div>
+    <p class="hint" id="hint" aria-live="polite"></p>
+  </section>
+  <section id="thanks" aria-live="polite">
+    <p class="big">Teşekkürler</p>
+    <p class="name">Deniz Hanım</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  var yes = document.getElementById('yes');
+  var no = document.getElementById('no');
+  var noSlot = document.getElementById('noSlot');
+  var hint = document.getElementById('hint');
+  var tries = 0, lastMove = 0, scale = 1;
+  var hints = ['', 'Hayır tuşu biraz çekingen.', 'Yakalayamazsın.', 'Evet çok daha kolay.', 'Hâlâ mı deniyorsun?', 'Pes et Deniz, Evet diyeceksin.'];
+
+  function dodge() {
+    var now = Date.now();
+    if (now - lastMove < 120) return;
+    lastMove = now;
+    var r = no.getBoundingClientRect();
+    if (!no.classList.contains('free')) {
+      noSlot.style.width = r.width + 'px';
+      noSlot.style.height = r.height + 'px';
+      no.classList.add('free');
+      no.style.left = r.left + 'px';
+      no.style.top = r.top + 'px';
+      void no.offsetWidth;
+    }
+    var w = no.offsetWidth, h = no.offsetHeight;
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var yr = yes.getBoundingClientRect();
+    var cx = parseFloat(no.style.left) + w / 2, cy = parseFloat(no.style.top) + h / 2;
+    var x, y, n = 0, ok;
+    do {
+      x = 16 + Math.random() * Math.max(1, vw - w - 32);
+      y = 70 + Math.random() * Math.max(1, vh - h - 140);
+      var overlaps = x < yr.right + 24 && x + w > yr.left - 24 && y < yr.bottom + 24 && y + h > yr.top - 24;
+      var far = Math.hypot(x + w / 2 - cx, y + h / 2 - cy) > 140;
+      ok = !overlaps && far;
+      n++;
+    } while (!ok && n < 40);
+    no.style.left = x + 'px';
+    no.style.top = y + 'px';
+    tries++;
+    hint.textContent = hints[Math.min(tries, hints.length - 1)];
+    if (scale < 1.3) { scale += 0.04; yes.style.transform = 'scale(' + scale.toFixed(2) + ')'; }
+  }
+
+  no.addEventListener('pointerenter', dodge);
+  no.addEventListener('pointerdown', function (e) { e.preventDefault(); dodge(); });
+  no.addEventListener('touchstart', function (e) { e.preventDefault(); dodge(); }, { passive: false });
+  no.addEventListener('click', function (e) { e.preventDefault(); dodge(); });
+  document.addEventListener('pointermove', function (e) {
+    if (document.body.classList.contains('done')) return;
+    var r = no.getBoundingClientRect();
+    var d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+    if (d < 80) dodge();
+  });
+
+  /* Havai fişek */
+  var cv = document.getElementById('fx');
+  var ctx = cv.getContext('2d');
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var W = 0, H = 0, parts = [], running = false, timer = null;
+  function resize() {
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function burst(x, y) {
+    var hue = Math.random() * 360;
+    var count = 70 + Math.floor(Math.random() * 40);
+    for (var i = 0; i < count; i++) {
+      var a = (Math.PI * 2 * i) / count + Math.random() * 0.2;
+      var s = 1.5 + Math.random() * 4.5;
+      parts.push({
+        x: x, y: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+        life: 1, decay: 0.008 + Math.random() * 0.012,
+        hue: hue + Math.random() * 40, size: 1.6 + Math.random() * 1.6
+      });
+    }
+  }
+  function randomBurst() {
+    burst(W * (0.12 + Math.random() * 0.76), H * (0.12 + Math.random() * 0.5));
+  }
+  function frame() {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = parts.length - 1; i >= 0; i--) {
+      var p = parts[i];
+      p.vx *= 0.985; p.vy = p.vy * 0.985 + 0.05;
+      p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+      if (p.life <= 0) { parts.splice(i, 1); continue; }
+      ctx.fillStyle = 'hsla(' + p.hue + ',100%,62%,' + p.life.toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * p.life + 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (running) requestAnimationFrame(frame);
+  }
+  function start() {
+    if (running) return;
+    running = true;
+    requestAnimationFrame(frame);
+    [0, 250, 550, 900].forEach(function (t) { setTimeout(randomBurst, t); });
+    timer = setInterval(randomBurst, 650);
+  }
+
+  yes.addEventListener('click', function () {
+    document.body.classList.add('done');
+    start();
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (document.body.classList.contains('done')) burst(e.clientX, e.clientY);
+  });
+})();
+</script>
+</body>
+</html>
